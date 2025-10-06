@@ -8,6 +8,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>YouTubeDownloader</AssemblyName>
     <RootNamespace>YouTubeDownloader</RootNamespace>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
   <ItemGroup>

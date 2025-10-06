@@ -1,0 +1,119 @@
+name: Build and Test YouTube Downloader
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest  # Use Windows runner for WPF application
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+        
+    - name: Restore dependencies
+      run: dotnet restore YouTubeDownloader/YouTubeDownloader.csproj
+      
+    - name: Build application
+      run: dotnet build YouTubeDownloader/YouTubeDownloader.csproj --configuration Release --no-restore
+      
+    - name: Run tests
+      run: dotnet test YouTubeDownloader.Tests/YouTubeDownloader.Tests.csproj --configuration Release --no-build --verbosity normal
+      
+    - name: Publish application
+      run: dotnet publish YouTubeDownloader/YouTubeDownloader.csproj --configuration Release --output ./publish --no-build
+      
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: YouTubeDownloader-${{ github.sha }}
+        path: ./publish/
+        retention-days: 30
+
+  build-standalone:
+    runs-on: windows-latest
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main'  # Only create standalone on main branch
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+        
+    - name: Restore dependencies
+      run: dotnet restore YouTubeDownloader/YouTubeDownloader.csproj
+      
+    - name: Publish self-contained executable
+      run: dotnet publish YouTubeDownloader/YouTubeDownloader.csproj --configuration Release --runtime win-x64 --self-contained true --output ./standalone --property:PublishSingleFile=true --property:IncludeNativeLibrariesForSelfExtract=true
+      
+    - name: Upload standalone executable
+      uses: actions/upload-artifact@v4
+      with:
+        name: YouTubeDownloader-Standalone-${{ github.sha }}
+        path: ./standalone/
+        retention-days: 90
+
+  # Optional: Create release on tags
+  release:
+    runs-on: windows-latest
+    needs: [build-and-test, build-standalone]
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+        
+    - name: Restore dependencies
+      run: dotnet restore YouTubeDownloader/YouTubeDownloader.csproj
+      
+    - name: Build release version
+      run: dotnet publish YouTubeDownloader/YouTubeDownloader.csproj --configuration Release --runtime win-x64 --self-contained true --output ./release --property:PublishSingleFile=true --property:IncludeNativeLibrariesForSelfExtract=true
+      
+    - name: Create ZIP archive
+      run: Compress-Archive -Path ./release/* -DestinationPath YouTubeDownloader-${{ github.ref_name }}.zip
+      
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: YouTubeDownloader-${{ github.ref_name }}.zip
+        body: |
+          ## YouTube Downloader ${{ github.ref_name }}
+          
+          ### Features
+          - Download YouTube videos in multiple qualities (1080p, 720p, 480p, 360p)
+          - Extract audio in MP3, AAC, or WAV formats
+          - Batch download support
+          - Simple WPF GUI interface
+          
+          ### Installation
+          1. Download the ZIP file
+          2. Extract to your desired location
+          3. Run `YouTubeDownloader.exe`
+          
+          ### System Requirements
+          - Windows 10/11
+          - .NET 8.0 Runtime (included in self-contained build)
+          
+          ### Note
+          YouTube actively blocks download attempts. See `YOUTUBE_BLOCKING_GUIDE.md` for alternatives and workarounds.
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
