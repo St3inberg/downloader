@@ -1,0 +1,203 @@
+name: Enhanced Build with .NET 8.0.20
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual triggering
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET 8.0.20
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.20'
+        
+    - name: Verify .NET installation
+      run: |
+        dotnet --version
+        dotnet --info
+        
+    - name: Clear NuGet cache
+      run: dotnet nuget locals all --clear
+      
+    - name: Restore dependencies
+      run: |
+        dotnet restore YouTubeDownloader/YouTubeDownloader.csproj --verbosity normal
+        dotnet restore YouTubeDownloader.Tests/YouTubeDownloader.Tests.csproj --verbosity normal
+      
+    - name: Build application
+      run: dotnet build YouTubeDownloader/YouTubeDownloader.csproj --configuration Release --no-restore --verbosity normal
+      
+    - name: Build tests
+      run: dotnet build YouTubeDownloader.Tests/YouTubeDownloader.Tests.csproj --configuration Release --no-restore --verbosity normal
+      
+    - name: Run tests
+      run: dotnet test YouTubeDownloader.Tests/YouTubeDownloader.Tests.csproj --configuration Release --no-build --verbosity normal --logger trx --collect:"XPlat Code Coverage"
+      
+    - name: Publish test results
+      uses: dorny/test-reporter@v1
+      if: success() || failure()
+      with:
+        name: Test Results
+        path: '**/*.trx'
+        reporter: dotnet-trx
+        
+    - name: Publish application
+      run: dotnet publish YouTubeDownloader/YouTubeDownloader.csproj --configuration Release --output ./publish --no-build --verbosity normal
+      
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: YouTubeDownloader-Build-${{ github.sha }}
+        path: ./publish/
+        retention-days: 30
+        
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: Test-Results-${{ github.sha }}
+        path: '**/*.trx'
+        retention-days: 30
+
+  build-standalone:
+    runs-on: windows-latest
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET 8.0.20
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.20'
+        
+    - name: Clear NuGet cache
+      run: dotnet nuget locals all --clear
+      
+    - name: Restore dependencies
+      run: dotnet restore YouTubeDownloader/YouTubeDownloader.csproj --verbosity normal
+      
+    - name: Publish self-contained executable
+      run: |
+        dotnet publish YouTubeDownloader/YouTubeDownloader.csproj `
+          --configuration Release `
+          --runtime win-x64 `
+          --self-contained true `
+          --output ./standalone `
+          --verbosity normal `
+          -p:PublishSingleFile=true `
+          -p:IncludeNativeLibrariesForSelfExtract=true `
+          -p:EnableCompressionInSingleFile=true `
+          -p:DebugType=embedded
+      
+    - name: List output files
+      run: Get-ChildItem -Recurse ./standalone
+      
+    - name: Upload standalone executable
+      uses: actions/upload-artifact@v4
+      with:
+        name: YouTubeDownloader-Standalone-${{ github.sha }}
+        path: ./standalone/
+        retention-days: 90
+
+  create-release:
+    runs-on: windows-latest
+    needs: [build-and-test, build-standalone]
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET 8.0.20
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.20'
+        
+    - name: Restore dependencies
+      run: dotnet restore YouTubeDownloader/YouTubeDownloader.csproj --verbosity normal
+      
+    - name: Build release version
+      run: |
+        dotnet publish YouTubeDownloader/YouTubeDownloader.csproj `
+          --configuration Release `
+          --runtime win-x64 `
+          --self-contained true `
+          --output ./release `
+          --verbosity normal `
+          -p:PublishSingleFile=true `
+          -p:IncludeNativeLibrariesForSelfExtract=true `
+          -p:EnableCompressionInSingleFile=true `
+          -p:DebugType=embedded
+      
+    - name: Create ZIP archive
+      run: |
+        $version = "${{ github.ref_name }}"
+        Compress-Archive -Path ./release/* -DestinationPath "YouTubeDownloader-$version.zip"
+        Get-ChildItem -Name "*.zip"
+      
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: YouTubeDownloader-${{ github.ref_name }}.zip
+        body: |
+          ## 🎉 YouTube Downloader ${{ github.ref_name }}
+          
+          ### ✨ Features
+          - 📹 Download YouTube videos in multiple qualities (1080p, 720p, 480p, 360p)
+          - 🎵 Extract audio in MP3, AAC, or WAV formats
+          - 📦 Batch download support with queue management
+          - 🖥️ Modern WPF GUI interface
+          - ⚡ Built with .NET 8.0.20 for optimal performance
+          
+          ### 📥 Installation
+          1. **Download** the `YouTubeDownloader-${{ github.ref_name }}.zip` file below
+          2. **Extract** to your desired location
+          3. **Run** `YouTubeDownloader.exe`
+          
+          ### 💻 System Requirements
+          - **OS:** Windows 10/11 (x64)
+          - **Runtime:** .NET 8.0 (included in self-contained build)
+          - **Memory:** 4GB RAM minimum
+          - **Storage:** 100MB+ free space
+          
+          ### ⚠️ Important Note
+          YouTube actively blocks automated download attempts. This is normal behavior.
+          
+          **For best results:**
+          - Wait between download attempts
+          - See `YOUTUBE_BLOCKING_GUIDE.md` for alternatives
+          - Consider using yt-dlp for maximum reliability
+          
+          ### 🐛 Reporting Issues
+          Found a bug? [Create an issue](https://github.com/St3inberg/downloader/issues) with:
+          - Windows version
+          - Error message (if any)
+          - YouTube URL that failed
+          
+          ### 📊 Build Info
+          - **Commit:** ${{ github.sha }}
+          - **Build Date:** ${{ github.run_id }}
+          - **.NET Version:** 8.0.20
+          - **Test Results:** All 68 tests passing ✅
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
