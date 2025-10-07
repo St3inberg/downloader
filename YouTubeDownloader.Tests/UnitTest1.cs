@@ -1,4 +1,4 @@
-﻿namespace YouTubeDownloader.Tests;
+namespace YouTubeDownloader.Tests;
 
 public class UnitTest1
 {

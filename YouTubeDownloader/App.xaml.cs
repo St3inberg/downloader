@@ -1,6 +1,6 @@
 using System;
-using System.Windows;
 using System.IO;
+using System.Windows;
 
 namespace YouTubeDownloader
 {
@@ -9,7 +9,7 @@ namespace YouTubeDownloader
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
-            
+
             // Log any unhandled exceptions
             AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
             {
@@ -18,7 +18,7 @@ namespace YouTubeDownloader
                 File.WriteAllText(errorLog, $"Error: {exception?.Message}\n\nStack Trace:\n{exception?.StackTrace}");
                 MessageBox.Show($"An error occurred. Details saved to:\n{errorLog}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             };
-            
+
             DispatcherUnhandledException += (sender, args) =>
             {
                 var errorLog = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "YouTubeDownloader_Error.txt");

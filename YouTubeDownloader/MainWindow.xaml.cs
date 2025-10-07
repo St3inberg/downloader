@@ -19,12 +19,12 @@ namespace YouTubeDownloader
         public MainWindow()
         {
             InitializeComponent();
-            
+
             _downloadQueue = new ObservableCollection<DownloadItem>();
             _downloadService = new DownloadService();
-            
+
             DownloadQueueGrid.ItemsSource = _downloadQueue;
-            
+
             // Set default download path
             _destinationPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
@@ -44,7 +44,7 @@ namespace YouTubeDownloader
             // Null check to prevent errors during XAML initialization
             if (QualityComboBox == null || AudioFormatComboBox == null)
                 return;
-                
+
             if (DownloadTypeComboBox.SelectedIndex == 0) // Video
             {
                 QualityComboBox.Visibility = Visibility.Visible;
@@ -75,17 +75,17 @@ namespace YouTubeDownloader
         private async void AddToQueueButton_Click(object sender, RoutedEventArgs e)
         {
             var url = UrlTextBox.Text.Trim();
-            
+
             if (string.IsNullOrWhiteSpace(url))
             {
-                MessageBox.Show("Please enter a YouTube URL.", "Invalid URL", 
+                MessageBox.Show("Please enter a YouTube URL.", "Invalid URL",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             if (!IsValidYouTubeUrl(url))
             {
-                MessageBox.Show("Please enter a valid YouTube URL.", "Invalid URL", 
+                MessageBox.Show("Please enter a valid YouTube URL.", "Invalid URL",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -118,7 +118,7 @@ namespace YouTubeDownloader
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error adding download: {ex.Message}", "Error", 
+                MessageBox.Show($"Error adding download: {ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 StatusTextBlock.Text = "Error occurred";
             }
@@ -132,7 +132,7 @@ namespace YouTubeDownloader
         {
             if (_downloadQueue.Count == 0)
             {
-                MessageBox.Show("Download queue is empty.", "No Downloads", 
+                MessageBox.Show("Download queue is empty.", "No Downloads",
                     MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
@@ -142,11 +142,11 @@ namespace YouTubeDownloader
             if (drive.AvailableFreeSpace < 100 * 1024 * 1024) // Less than 100MB
             {
                 var result = MessageBox.Show(
-                    "Low disk space warning. Continue anyway?", 
+                    "Low disk space warning. Continue anyway?",
                     "Disk Space Warning",
-                    MessageBoxButton.YesNo, 
+                    MessageBoxButton.YesNo,
                     MessageBoxImage.Warning);
-                
+
                 if (result == MessageBoxResult.No)
                     return;
             }
@@ -174,9 +174,9 @@ namespace YouTubeDownloader
         private void ClearQueueButton_Click(object sender, RoutedEventArgs e)
         {
             var result = MessageBox.Show(
-                "Are you sure you want to clear the download queue?", 
+                "Are you sure you want to clear the download queue?",
                 "Clear Queue",
-                MessageBoxButton.YesNo, 
+                MessageBoxButton.YesNo,
                 MessageBoxImage.Question);
 
             if (result == MessageBoxResult.Yes)
@@ -205,8 +205,8 @@ namespace YouTubeDownloader
                 item.Progress = 100;
                 item.Status = "Completed";
                 StatusTextBlock.Text = $"Completed: {item.Title}";
-                
-                MessageBox.Show($"Download completed: {item.Title}", "Success", 
+
+                MessageBox.Show($"Download completed: {item.Title}", "Success",
                     MessageBoxButton.OK, MessageBoxImage.Information);
             });
         }
@@ -218,16 +218,16 @@ namespace YouTubeDownloader
                 var item = _downloadQueue[e.ItemIndex];
                 item.Status = $"Failed: {e.ErrorMessage}";
                 StatusTextBlock.Text = $"Failed: {item.Title}";
-                
-                MessageBox.Show($"Download failed: {item.Title}\n\nError: {e.ErrorMessage}", 
+
+                MessageBox.Show($"Download failed: {item.Title}\n\nError: {e.ErrorMessage}",
                     "Download Failed", MessageBoxButton.OK, MessageBoxImage.Error);
             });
         }
 
         private bool IsValidYouTubeUrl(string url)
         {
-            return url.Contains("youtube.com/watch") || 
-                   url.Contains("youtu.be/") || 
+            return url.Contains("youtube.com/watch") ||
+                   url.Contains("youtu.be/") ||
                    url.Contains("youtube.com/playlist");
         }
 

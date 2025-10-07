@@ -3,6 +3,10 @@ using System.Runtime.CompilerServices;
 
 namespace YouTubeDownloader.Models
 {
+    /// <summary>
+    /// Represents a YouTube download item with progress tracking and metadata.
+    /// Implements INotifyPropertyChanged for data binding in WPF.
+    /// </summary>
     public class DownloadItem : INotifyPropertyChanged
     {
         private string _title = string.Empty;
@@ -15,6 +19,9 @@ namespace YouTubeDownloader.Models
         private string _size = "Unknown";
         private string _destinationPath = string.Empty;
 
+        /// <summary>
+        /// Gets or sets the title of the video or playlist.
+        /// </summary>
         public string Title
         {
             get => _title;
@@ -25,6 +32,9 @@ namespace YouTubeDownloader.Models
             }
         }
 
+        /// <summary>
+        /// Gets or sets the YouTube URL for this download.
+        /// </summary>
         public string Url
         {
             get => _url;
@@ -35,6 +45,9 @@ namespace YouTubeDownloader.Models
             }
         }
 
+        /// <summary>
+        /// Gets or sets the download type ("Video" or "Audio").
+        /// </summary>
         public string Type
         {
             get => _type;
@@ -45,6 +58,9 @@ namespace YouTubeDownloader.Models
             }
         }
 
+        /// <summary>
+        /// Gets or sets the quality setting for the download.
+        /// </summary>
         public string Quality
         {
             get => _quality;
@@ -55,6 +71,9 @@ namespace YouTubeDownloader.Models
             }
         }
 
+        /// <summary>
+        /// Gets or sets the output format for audio downloads (e.g., "mp3", "aac").
+        /// </summary>
         public string Format
         {
             get => _format;
@@ -65,6 +84,9 @@ namespace YouTubeDownloader.Models
             }
         }
 
+        /// <summary>
+        /// Gets or sets the current status of the download.
+        /// </summary>
         public string Status
         {
             get => _status;
@@ -75,6 +97,9 @@ namespace YouTubeDownloader.Models
             }
         }
 
+        /// <summary>
+        /// Gets or sets the download progress percentage (0-100).
+        /// </summary>
         public double Progress
         {
             get => _progress;
@@ -85,6 +110,9 @@ namespace YouTubeDownloader.Models
             }
         }
 
+        /// <summary>
+        /// Gets or sets the formatted file size string.
+        /// </summary>
         public string Size
         {
             get => _size;
@@ -95,6 +123,9 @@ namespace YouTubeDownloader.Models
             }
         }
 
+        /// <summary>
+        /// Gets or sets the destination directory for the download.
+        /// </summary>
         public string DestinationPath
         {
             get => _destinationPath;
@@ -105,8 +136,15 @@ namespace YouTubeDownloader.Models
             }
         }
 
+        /// <summary>
+        /// Occurs when a property value changes.
+        /// </summary>
         public event PropertyChangedEventHandler? PropertyChanged;
 
+        /// <summary>
+        /// Raises the PropertyChanged event for the specified property.
+        /// </summary>
+        /// <param name="propertyName">Name of the property that changed. This parameter is automatically provided by the compiler.</param>
         protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));

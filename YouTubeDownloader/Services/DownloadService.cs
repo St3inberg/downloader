@@ -6,58 +6,119 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+
+using YouTubeDownloader.Models;
 using YoutubeExplode;
+using YoutubeExplode.Playlists;
 using YoutubeExplode.Videos;
 using YoutubeExplode.Videos.Streams;
-using YoutubeExplode.Playlists;
-using YouTubeDownloader.Models;
 
 namespace YouTubeDownloader.Services
 {
+    /// <summary>
+    /// Service for downloading YouTube videos and audio with retry logic and progress tracking.
+    /// </summary>
     public class DownloadService : IDisposable
     {
-        private readonly YoutubeClient _youtubeClient;
+        private YoutubeClient _youtubeClient;
+        private HttpClient _httpClient;
         private CancellationTokenSource? _cancellationTokenSource;
         private int _activeDownloads = 0;
+        private bool _disposed = false;
 
+        /// <summary>
+        /// Gets the number of currently active downloads.
+        /// </summary>
         public int ActiveDownloads => _activeDownloads;
 
+        /// <summary>
+        /// Raised when download progress changes for any item.
+        /// </summary>
         public event EventHandler<DownloadProgressEventArgs>? DownloadProgressChanged;
+
+        /// <summary>
+        /// Raised when a download completes successfully.
+        /// </summary>
         public event EventHandler<DownloadCompletedEventArgs>? DownloadCompleted;
+
+        /// <summary>
+        /// Raised when a download fails after all retry attempts.
+        /// </summary>
         public event EventHandler<DownloadFailedEventArgs>? DownloadFailed;
 
+        /// <summary>
+        /// Initializes a new instance of the DownloadService with browser-like headers.
+        /// </summary>
         public DownloadService()
         {
-            // Create HttpClient with browser-like user agent to avoid rate limiting
-            var httpClient = new HttpClient();
-            httpClient.DefaultRequestHeaders.Add("User-Agent", 
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-            httpClient.DefaultRequestHeaders.Add("Accept-Language", "en-US,en;q=0.9");
-            httpClient.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");
+            // Create HttpClient with rotating browser-like user agent to avoid detection
+            _httpClient = new HttpClient();
             
-            _youtubeClient = new YoutubeClient(httpClient);
+            // Use different User-Agent strings to avoid pattern detection
+            var userAgents = new[]
+            {
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            };
+            
+            var selectedUserAgent = userAgents[Random.Shared.Next(userAgents.Length)];
+            
+            _httpClient.DefaultRequestHeaders.Add("User-Agent", selectedUserAgent);
+            _httpClient.DefaultRequestHeaders.Add("Accept-Language", "en-US,en;q=0.9");
+            _httpClient.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/avif,*/*;q=0.8");
+            _httpClient.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate, br");
+            _httpClient.DefaultRequestHeaders.Add("DNT", "1");
+            _httpClient.DefaultRequestHeaders.Add("Upgrade-Insecure-Requests", "1");
+            _httpClient.DefaultRequestHeaders.Add("Sec-Fetch-Dest", "document");
+            _httpClient.DefaultRequestHeaders.Add("Sec-Fetch-Mode", "navigate");
+            _httpClient.DefaultRequestHeaders.Add("Sec-Fetch-Site", "none");
+            _httpClient.DefaultRequestHeaders.Add("Sec-Fetch-User", "?1");
+            
+            // Set timeout to handle slow responses
+            _httpClient.Timeout = TimeSpan.FromSeconds(30);
+
+            _youtubeClient = new YoutubeClient(_httpClient);
         }
 
+        /// <summary>
+        /// Creates a download item from a YouTube URL with retry logic for rate limiting.
+        /// </summary>
+        /// <param name="url">The YouTube video or playlist URL.</param>
+        /// <param name="type">Download type: "Video" or "Audio".</param>
+        /// <param name="quality">Video quality preference or audio format.</param>
+        /// <param name="format">Output format for audio downloads.</param>
+        /// <param name="destinationPath">Directory to save the downloaded files.</param>
+        /// <returns>A configured DownloadItem ready for download.</returns>
+        /// <exception cref="ArgumentException">Thrown when URL is invalid.</exception>
+        /// <exception cref="HttpRequestException">Thrown when YouTube blocks the request after retries.</exception>
         public async Task<DownloadItem> CreateDownloadItemAsync(
             string url, string type, string quality, string format, string destinationPath)
         {
-            // Retry logic for rate limiting
-            int maxRetries = 3;
-            int retryDelayMs = 2000;
+            // Enhanced retry logic for cipher manifest and rate limiting
+            int maxRetries = 5; // Increased retries for cipher issues
+            int baseRetryDelayMs = 1000;
             
+            Exception? lastException = null;
+
             for (int attempt = 0; attempt < maxRetries; attempt++)
             {
                 try
                 {
-                    // Add delay between retries
+                    // Progressive delay with jitter to avoid detection patterns
                     if (attempt > 0)
                     {
-                        await Task.Delay(retryDelayMs * attempt);
+                        var delay = baseRetryDelayMs * (int)Math.Pow(2, attempt) + Random.Shared.Next(500, 1500);
+                        await Task.Delay(delay);
+                        
+                        // Log retry attempt for debugging
+                        System.Diagnostics.Debug.WriteLine($"Retry attempt {attempt + 1}/{maxRetries} for URL: {url}");
                     }
-                    
+
                     // Clean URL by removing tracking parameters
                     url = CleanYouTubeUrl(url);
-                    
+
                     // Check if it's a playlist
                     if (url.Contains("playlist"))
                     {
@@ -67,7 +128,7 @@ namespace YouTubeDownloader.Services
                         {
                             videos.Add(video);
                         }
-                        
+
                         return new DownloadItem
                         {
                             Title = $"{playlist.Title} (Playlist - {videos.Count} videos)",
@@ -83,7 +144,7 @@ namespace YouTubeDownloader.Services
                     {
                         var video = await _youtubeClient.Videos.GetAsync(url);
                         var streamManifest = await _youtubeClient.Videos.Streams.GetManifestAsync(video.Id);
-                        
+
                         long size = 0;
                         if (type == "Video")
                         {
@@ -115,29 +176,150 @@ namespace YouTubeDownloader.Services
                 }
                 catch (Exception ex)
                 {
-                    // If this is the last attempt, throw the exception
-                    if (attempt == maxRetries - 1)
+                    lastException = ex;
+                    
+                    // Handle specific cipher manifest errors
+                    if (ex.Message.Contains("cipher manifest") || ex.Message.Contains("cipher") || ex.Message.Contains("signature"))
                     {
-                        if (ex.Message.Contains("watch page is broken") || ex.Message.Contains("rate limit"))
+                        System.Diagnostics.Debug.WriteLine($"Cipher error on attempt {attempt + 1}: {ex.Message}");
+                        
+                        // Recreate YouTube client with fresh headers after cipher errors
+                        if (attempt < maxRetries - 1)
                         {
-                            throw new Exception($"YouTube is temporarily blocking requests. Please wait a few minutes and try again. If this persists, YouTube may be rate-limiting your IP address.", ex);
+                            RecreateYouTubeClient();
                         }
+                        
+                        // If this is the last attempt for cipher errors, provide specific guidance
+                        if (attempt == maxRetries - 1)
+                        {
+                            throw new Exception($"Failed to extract cipher manifest. YouTube has enhanced their anti-bot protection. " +
+                                $"Try these solutions:\n" +
+                                $"1. Wait 10-15 minutes before trying again\n" +
+                                $"2. Try a different video URL\n" +
+                                $"3. Use a VPN to change your IP address\n" +
+                                $"4. Check if the video is age-restricted or region-locked\n" +
+                                $"\nTechnical error: {ex.Message}", ex);
+                        }
+                        continue; // Continue to next retry for cipher errors
+                    }
+                    
+                    // Handle rate limiting errors
+                    if (ex.Message.Contains("watch page is broken") || ex.Message.Contains("rate limit") || ex.Message.Contains("429"))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Rate limit error on attempt {attempt + 1}: {ex.Message}");
+                        
+                        if (attempt == maxRetries - 1)
+                        {
+                            throw new Exception($"YouTube is rate-limiting requests. Please wait 10-15 minutes and try again. " +
+                                $"If this persists, your IP address may be temporarily blocked.\n" +
+                                $"\nTechnical error: {ex.Message}", ex);
+                        }
+                        continue; // Continue to next retry for rate limit errors
+                    }
+                    
+                    // For other errors, fail immediately if it's not a network issue
+                    if (!IsRetryableError(ex))
+                    {
                         throw new Exception($"Failed to fetch video information: {ex.Message}", ex);
                     }
-                    // Otherwise, continue to next retry
+                    
+                    // If this is the last attempt for retryable errors
+                    if (attempt == maxRetries - 1)
+                    {
+                        throw new Exception($"Failed to fetch video information after {maxRetries} attempts. " +
+                            $"Last error: {ex.Message}", ex);
+                    }
                 }
             }
-            
-            throw new Exception("Failed to fetch video information after multiple retries.");
+
+            // This should never be reached, but provide fallback with last exception info
+            var errorMessage = lastException != null 
+                ? $"Failed to fetch video information after {maxRetries} attempts. Last error: {lastException.Message}"
+                : "Failed to fetch video information after multiple retries.";
+            throw new Exception(errorMessage, lastException);
         }
-        
+
+        /// <summary>
+        /// Determines if an error is worth retrying based on its characteristics.
+        /// </summary>
+        /// <param name="ex">The exception to evaluate.</param>
+        /// <returns>True if the error might succeed on retry, false otherwise.</returns>
+        private static bool IsRetryableError(Exception ex)
+        {
+            var message = ex.Message.ToLower();
+            
+            // Network-related errors that might succeed on retry
+            return message.Contains("timeout") ||
+                   message.Contains("connection") ||
+                   message.Contains("network") ||
+                   message.Contains("socket") ||
+                   message.Contains("dns") ||
+                   message.Contains("ssl") ||
+                   message.Contains("tls") ||
+                   ex is HttpRequestException ||
+                   ex is TaskCanceledException;
+        }
+
+        /// <summary>
+        /// Recreates the YouTube client with fresh headers to bypass cipher detection.
+        /// </summary>
+        private void RecreateYouTubeClient()
+        {
+            try
+            {
+                // Dispose old client
+                _httpClient?.Dispose();
+                
+                // Create new HttpClient with different headers
+                _httpClient = new HttpClient();
+                
+                // Rotate to a different User-Agent
+                var userAgents = new[]
+                {
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+                };
+                
+                var selectedUserAgent = userAgents[Random.Shared.Next(userAgents.Length)];
+                
+                _httpClient.DefaultRequestHeaders.Add("User-Agent", selectedUserAgent);
+                _httpClient.DefaultRequestHeaders.Add("Accept-Language", "en-US,en;q=0.9");
+                _httpClient.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/avif,*/*;q=0.8");
+                _httpClient.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate, br");
+                _httpClient.DefaultRequestHeaders.Add("Cache-Control", "no-cache");
+                _httpClient.DefaultRequestHeaders.Add("Pragma", "no-cache");
+                
+                // Add random viewport size
+                var viewports = new[] { "1920,1080", "1366,768", "1536,864", "1440,900", "1280,720" };
+                var selectedViewport = viewports[Random.Shared.Next(viewports.Length)];
+                _httpClient.DefaultRequestHeaders.Add("Viewport-Width", selectedViewport.Split(',')[0]);
+                
+                _httpClient.Timeout = TimeSpan.FromSeconds(30);
+                
+                // Create new YoutubeClient
+                _youtubeClient = new YoutubeClient(_httpClient);
+                
+                System.Diagnostics.Debug.WriteLine($"Recreated YouTube client with User-Agent: {selectedUserAgent}");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error recreating YouTube client: {ex.Message}");
+                // Fallback to basic client if recreation fails
+                _httpClient = new HttpClient();
+                _youtubeClient = new YoutubeClient(_httpClient);
+            }
+        }
+
         private string CleanYouTubeUrl(string url)
         {
             try
             {
                 // Remove tracking parameters like 'si', 'feature', etc.
                 var uri = new Uri(url);
-                
+
                 // For youtu.be short URLs
                 if (uri.Host.Contains("youtu.be"))
                 {
@@ -145,13 +327,13 @@ namespace YouTubeDownloader.Services
                     var videoId = uri.AbsolutePath.TrimStart('/').Split('?')[0];
                     return $"https://youtu.be/{videoId}";
                 }
-                
+
                 // For youtube.com URLs
                 if (uri.Host.Contains("youtube.com"))
                 {
                     var queryParams = uri.Query.TrimStart('?').Split('&');
                     var essentialParams = new List<string>();
-                    
+
                     foreach (var param in queryParams)
                     {
                         var parts = param.Split('=');
@@ -159,7 +341,7 @@ namespace YouTubeDownloader.Services
                         {
                             var key = parts[0];
                             var value = parts[1];
-                            
+
                             // Keep only essential parameters
                             if (key == "v" || key == "list" || key == "t")
                             {
@@ -167,15 +349,15 @@ namespace YouTubeDownloader.Services
                             }
                         }
                     }
-                    
+
                     if (essentialParams.Count > 0)
                     {
                         return $"{uri.Scheme}://{uri.Host}{uri.AbsolutePath}?{string.Join("&", essentialParams)}";
                     }
-                    
+
                     return $"{uri.Scheme}://{uri.Host}{uri.AbsolutePath}";
                 }
-                
+
                 // Return original URL if not a recognized YouTube format
                 return url;
             }
@@ -203,7 +385,7 @@ namespace YouTubeDownloader.Services
                 try
                 {
                     Interlocked.Increment(ref _activeDownloads);
-                    
+
                     if (item.Url.Contains("playlist"))
                     {
                         await DownloadPlaylistAsync(item, i, token);
@@ -413,17 +595,53 @@ namespace YouTubeDownloader.Services
             DownloadFailed?.Invoke(this, e);
         }
 
+        /// <summary>
+        /// Releases all resources used by the DownloadService.
+        /// </summary>
         public void Dispose()
         {
-            _cancellationTokenSource?.Dispose();
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        /// <summary>
+        /// Releases the unmanaged resources and optionally releases the managed resources.
+        /// </summary>
+        /// <param name="disposing">true to release both managed and unmanaged resources; false to release only unmanaged resources.</param>
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_disposed)
+            {
+                if (disposing)
+                {
+                    _cancellationTokenSource?.Dispose();
+                    _httpClient?.Dispose();
+                }
+                _disposed = true;
+            }
         }
     }
 
+    /// <summary>
+    /// Event arguments for download progress updates.
+    /// </summary>
     public class DownloadProgressEventArgs : EventArgs
     {
+        /// <summary>
+        /// Gets the index of the download item in the queue.
+        /// </summary>
         public int ItemIndex { get; }
+
+        /// <summary>
+        /// Gets the download progress percentage (0-100).
+        /// </summary>
         public double Progress { get; }
 
+        /// <summary>
+        /// Initializes a new instance of the DownloadProgressEventArgs class.
+        /// </summary>
+        /// <param name="itemIndex">The index of the download item.</param>
+        /// <param name="progress">The progress percentage (0-100).</param>
         public DownloadProgressEventArgs(int itemIndex, double progress)
         {
             ItemIndex = itemIndex;
@@ -431,11 +649,26 @@ namespace YouTubeDownloader.Services
         }
     }
 
+    /// <summary>
+    /// Event arguments for successful download completion.
+    /// </summary>
     public class DownloadCompletedEventArgs : EventArgs
     {
+        /// <summary>
+        /// Gets the index of the completed download item.
+        /// </summary>
         public int ItemIndex { get; }
+
+        /// <summary>
+        /// Gets the full path to the downloaded file.
+        /// </summary>
         public string OutputPath { get; }
 
+        /// <summary>
+        /// Initializes a new instance of the DownloadCompletedEventArgs class.
+        /// </summary>
+        /// <param name="itemIndex">The index of the download item.</param>
+        /// <param name="outputPath">The path to the downloaded file.</param>
         public DownloadCompletedEventArgs(int itemIndex, string outputPath)
         {
             ItemIndex = itemIndex;
@@ -443,11 +676,26 @@ namespace YouTubeDownloader.Services
         }
     }
 
+    /// <summary>
+    /// Event arguments for failed downloads.
+    /// </summary>
     public class DownloadFailedEventArgs : EventArgs
     {
+        /// <summary>
+        /// Gets the index of the failed download item.
+        /// </summary>
         public int ItemIndex { get; }
+
+        /// <summary>
+        /// Gets the error message describing the failure.
+        /// </summary>
         public string ErrorMessage { get; }
 
+        /// <summary>
+        /// Initializes a new instance of the DownloadFailedEventArgs class.
+        /// </summary>
+        /// <param name="itemIndex">The index of the failed download item.</param>
+        /// <param name="errorMessage">The error message describing the failure.</param>
         public DownloadFailedEventArgs(int itemIndex, string errorMessage)
         {
             ItemIndex = itemIndex;

@@ -1,7 +1,7 @@
-using YouTubeDownloader.Services;
-using YouTubeDownloader.Models;
-using FluentAssertions;
 using System.Collections.ObjectModel;
+using FluentAssertions;
+using YouTubeDownloader.Models;
+using YouTubeDownloader.Services;
 
 namespace YouTubeDownloader.Tests.Services;
 
@@ -33,7 +33,7 @@ public class DownloadServiceTests : IDisposable
         var destination = Path.GetTempPath();
 
         // Act
-        Func<Task> act = async () => 
+        Func<Task> act = async () =>
             await _service.CreateDownloadItemAsync(url, type, quality, format, destination);
 
         // Assert - This may fail if network is unavailable or YouTube blocks the request
@@ -52,7 +52,7 @@ public class DownloadServiceTests : IDisposable
         var destination = Path.GetTempPath();
 
         // Act
-        Func<Task> act = async () => 
+        Func<Task> act = async () =>
             await _service.CreateDownloadItemAsync(invalidUrl, type, quality, format, destination);
 
         // Assert

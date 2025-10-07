@@ -1,6 +1,6 @@
-using YouTubeDownloader.Models;
-using FluentAssertions;
 using System.ComponentModel;
+using FluentAssertions;
+using YouTubeDownloader.Models;
 
 namespace YouTubeDownloader.Tests.Models;
 

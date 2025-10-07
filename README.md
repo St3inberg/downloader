@@ -157,24 +157,50 @@ YouTubeDownloader/
 
 ## Troubleshooting
 
-### "Unable to find package YoutubeExplode"
+### Common YouTube Errors
+
+#### "Failed to extract cipher manifest"
+This error occurs when YouTube's anti-bot protection blocks access. **Solutions**:
+1. **Wait 10-15 minutes** and try again
+2. **Try a different video** to test connectivity
+3. **Use a VPN** to change your IP address
+4. **Check if the video is age-restricted** or region-locked
+
+The app automatically:
+- Retries 5 times with increasing delays
+- Rotates User-Agent headers to avoid detection
+- Recreates the connection with fresh headers
+
+For detailed guidance, see [CIPHER_MANIFEST_TROUBLESHOOTING.md](CIPHER_MANIFEST_TROUBLESHOOTING.md)
+
+#### "Rate limited" or "Watch page broken"
+YouTube is temporarily blocking requests from your IP:
+1. **Wait 10-15 minutes** before trying again
+2. **Use a different internet connection**
+3. **Try with a VPN** to change location
+
+### Application Errors
+
+#### "Unable to find package YoutubeExplode"
 ```cmd
 dotnet restore
 ```
 
-### "This application requires .NET 8.0"
+#### "This application requires .NET 8.0"
 - Download and install [.NET 8.0 Runtime](https://dotnet.microsoft.com/download/dotnet/8.0)
 
-### Downloads are slow
+### Performance Issues
+
+#### Downloads are slow
 - Check your internet connection
 - YouTube may be throttling requests
 - Try downloading at a lower quality
 
-### "Access to path denied"
+#### "Access to path denied"
 - Run the application as Administrator
 - Change the destination folder to a location with write permissions
 
-### Playlist downloads fail
+#### Playlist downloads fail
 - Ensure the playlist is public
 - Try downloading individual videos from the playlist
 

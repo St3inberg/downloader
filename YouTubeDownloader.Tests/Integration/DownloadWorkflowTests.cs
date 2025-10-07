@@ -1,7 +1,7 @@
+using System.Collections.ObjectModel;
+using FluentAssertions;
 using YouTubeDownloader.Models;
 using YouTubeDownloader.Services;
-using FluentAssertions;
-using System.Collections.ObjectModel;
 
 namespace YouTubeDownloader.Tests.Integration;
 
